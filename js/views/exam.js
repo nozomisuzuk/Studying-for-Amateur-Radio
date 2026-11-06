@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import { buildSessionExam, buildRandomExam, scoreExam, grade, examPoints, kindOrder } from '../engine.js';
 import { h, icon, toast, confirmDialog, fmtDuration, fmtDateTime } from '../ui.js';
 import { questionFigure, answerUI, prefetch, answerText, responseText } from '../components.js';
-import { startSession } from './drill.js';
+import { startSession, rememberListPath } from './drill.js';
 import { navigate } from '../app.js';
 
 function subjectInfo(subject) {
@@ -255,6 +255,7 @@ export function renderExamResult(view, idxStr) {
     navigate('/exam', { replace: true });
     return;
   }
+  rememberListPath(`/exam/result/${idxStr}`); // 1問解き直した後にこの結果画面へ戻る
   const info = db().subjects[r.subject];
   const qs = r.ids.map(getQ).filter(Boolean);
   const pts = (q) => r.points?.[q.id] ?? examPoints(q, r.answers[q.id]);

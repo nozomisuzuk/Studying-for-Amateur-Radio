@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   retryWrong: true,       // 間違えた問題をセット内で少し後にもう一度出す
   subject: 'both',        // おまかせ演習の科目: both | kogaku | hoki
   showTimer: true,
+  qView: 'auto',          // 問題文: auto(狭い画面は文字・広い画面は原本) | text | image
 };
 
 function blank() {

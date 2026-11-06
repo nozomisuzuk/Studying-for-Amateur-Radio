@@ -49,8 +49,11 @@
     color-scheme: dark;
   }
   :root:not([data-theme="light"]).invert-q .qimg,
+  :root:not([data-theme="light"]).invert-q .tv-fig img,
+  :root:not([data-theme="light"]).invert-q .tv img.im,
   :root:not([data-theme="light"]).invert-q .zoom-canvas img { filter: invert(0.9) hue-rotate(180deg); }
   :root:not([data-theme="light"]).invert-q { --paper: #191919; }
+  :root:not([data-theme="light"]).invert-q .tv img.im { mix-blend-mode: lighten; }
 }
 
 :root[data-theme="dark"] {
@@ -75,7 +78,10 @@
   color-scheme: dark;
 }
 :root[data-theme="dark"].invert-q { --paper: #191919; }
+:root[data-theme="dark"].invert-q .tv img.im { mix-blend-mode: lighten; }
 :root[data-theme="dark"].invert-q .qimg,
+:root[data-theme="dark"].invert-q .tv-fig img,
+:root[data-theme="dark"].invert-q .tv img.im,
 :root[data-theme="dark"].invert-q .zoom-canvas img { filter: invert(0.9) hue-rotate(180deg); }
 
 * { box-sizing: border-box; }
@@ -274,7 +280,8 @@ button.genre-row:hover { background: var(--surface-2); }
 }
 .qimg { display: block; width: 100%; height: auto; }
 .qimg + .qimg { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
-.fig-tools { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.fig-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.fig-note { font-size: 0.72rem; color: var(--muted); margin-right: auto; }
 .zoom-btn {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; min-height: 34px;
   border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
@@ -282,6 +289,36 @@ button.genre-row:hover { background: var(--surface-2); }
 }
 .zoom-btn.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .qnotes .notice { margin-top: 10px; }
+
+/* テキスト表示(PDFから組み直した問題文) */
+.tv {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 14px 6px; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere;
+}
+.tv-p { margin: 0 0 0.7em; }
+.tv-p.has-m { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.45em; }
+.tv-m { font-weight: 700; min-width: 1em; }
+.tv-note { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+.tv .bl {
+  display: inline-block; min-width: 2.4em; padding: 0 0.45em; margin: 0 0.2em;
+  border: 1.5px solid currentColor; border-radius: 3px; text-align: center;
+  font-weight: 700; font-size: 0.88em; line-height: 1.45; vertical-align: 0.05em;
+}
+.tv .bl:empty::before { content: "\00a0"; }
+.tv img.im { height: 1.42em; width: auto; vertical-align: -0.4em; margin: 0 0.05em; }
+.tv sub, .tv sup { font-size: 0.72em; line-height: 0; }
+.tv i { font-family: "Times New Roman", Times, serif; font-size: 1.08em; }
+.tv-tblwrap { overflow-x: auto; margin: 0.2em 0 0.9em; }
+.tv-tbl { border-collapse: collapse; width: 100%; font-size: 0.93rem; line-height: 1.55; }
+.tv-tbl th, .tv-tbl td { border-bottom: 1px solid var(--border); padding: 6px 6px; text-align: left; vertical-align: top; }
+.tv-tbl thead th { color: var(--muted); font-size: 0.8rem; font-weight: 700; border-bottom-width: 2px; }
+.tv-tbl tbody th { font-weight: 800; width: 1.6em; color: var(--primary); }
+.tv-list { list-style: none; padding: 0; margin: 0.2em 0 0.9em; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; }
+.tv-list li { display: grid; grid-template-columns: 1.6em minmax(0, 1fr); align-items: baseline; line-height: 1.55; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.tv-list b { color: var(--primary); }
+.tv-fig { margin: 0.3em 0 0.9em; text-align: center; background: var(--paper); border-radius: 8px; padding: 4px; cursor: zoom-in; }
+.tv-fig img { display: inline-block; max-width: 100%; height: auto; }
+.tv-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--muted); margin-top: 6px; }
 
 .b-hint { font-size: 0.85rem; color: var(--muted); margin: 12px 0 6px; }
 .answer-b { display: grid; gap: 6px; }

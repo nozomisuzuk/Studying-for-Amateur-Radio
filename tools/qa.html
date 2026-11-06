@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テキスト表示の確認</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  body { padding: 12px; }
+  .qa { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 28px; border-bottom: 4px solid #888; padding-bottom: 16px; }
+  .qa h3 { color: var(--text); margin: 0; }
+  .qa .orig img { width: 100%; border: 1px solid #ccc; }
+  @media (min-width: 900px) { .qa { grid-template-columns: 1fr 380px; } }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script type="module">
+  import { renderTextView } from '../js/textview.js';
+  import { h } from '../js/ui.js';
+  const params = new URLSearchParams(location.search);
+  const ids = (params.get('ids') || '').split(',').filter(Boolean);
+  const showOrig = params.get('orig') !== '0';
+  const data = await (await fetch('../data/questions.json')).json();
+  const out = document.getElementById('out');
+  for (const q of data.questions) {
+    if (ids.length && !ids.includes(q.id)) continue;
+    if (!q.tv) continue;
+    out.append(h('section.qa', { id: q.id },
+      showOrig ? h('div.orig', h('h3', q.id), q.images.map((im) => h('img', { src: '../' + im.src }))) : h('h3', q.id),
+      h('div', renderTextView(q, '../'))));
+  }
+  document.body.dataset.ready = '1';
+</script>
+</body>
+</html>

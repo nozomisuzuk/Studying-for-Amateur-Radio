@@ -62,7 +62,11 @@ async function cacheAll(urls, onProgress) {
 export function renderSettings(view) {
   const D = db();
   const s = store.settings();
-  const urls = D.questions.flatMap((q) => q.images.map((im) => im.src));
+  const urls = [...new Set(D.questions.flatMap((q) => [
+    ...q.images.map((im) => im.src),
+    ...(q.tv || []).flatMap((b) => (b.t === 'img' ? [b.src]
+      : [...JSON.stringify(b).matchAll(/data\/img\/[A-Za-z0-9_/.-]+\.png/g)].map((m) => m[0]))),
+  ]))];
 
   // ---- オフライン
   const offStatus = h('span.muted');
@@ -147,11 +151,13 @@ export function renderSettings(view) {
       row('受験予定日', dateInput, 'ホームに試験までの日数を表示')),
     h('section.card',
       h('h2', '表示'),
+      row('問題文の表示', selectCtl('qView', [['auto', '自動（スマホは文字・PCは原本）'], ['text', '常に文字で表示'], ['image', '常に原本（画像）']]),
+        '「文字」はPDFから組み直した表示で、図や数式は画像のまま入ります。問題ごとにボタンでも切り替えられます'),
       row('テーマ', selectCtl('theme', [['auto', '端末に合わせる'], ['light', 'ライト'], ['dark', 'ダーク']], applyTheme)),
       row('ダークテーマで問題を白黒反転', toggleCtl('invertInDark', applyTheme), '問題画像を暗い背景・白い文字で表示')),
     h('section.card',
       h('h2', 'オフライン'),
-      h('p.muted', 'アプリ本体は一度開くと自動で保存されます。問題画像（約11MB）も保存しておくと、電波のない場所でも全問題を解けます。'),
+      h('p.muted', `アプリ本体は一度開くと自動で保存されます。問題の画像（${urls.length}枚）も保存しておくと、電波のない場所でも全問題を解けます。`),
       h('div.btn-row', offBtn, offStatus)),
     h('section.card',
       h('h2', '学習記録のバックアップ'),

@@ -3,29 +3,66 @@
 import { KANA } from './engine.js';
 import { h, icon, openZoom } from './ui.js';
 import { questionTitle } from './data.js';
+import { renderTextView } from './textview.js';
+import * as store from './store.js';
 
-/** 問題画像。タップ/クリックで拡大ビューアを開く */
+const NARROW = 760; // これより狭い画面では「自動」でテキスト表示にする
+
+/** 表示方法: 'text'(PDFから組み直した本文) / 'image'(原本の画像) */
+export function viewModeFor(q) {
+  if (!q.tv) return 'image';
+  const pref = store.settings().qView || 'auto';
+  if (pref === 'text' || pref === 'image') return pref;
+  return window.innerWidth < NARROW ? 'text' : 'image';
+}
+
+/**
+ * 問題文。スマホなど狭い画面ではテキスト表示、広い画面では原本の画像を出す。
+ * どちらの表示でも、ボタンでもう一方に切り替えられる(切り替えた方を次の問題からも使う)。
+ */
 export function questionFigure(q) {
   const title = questionTitle(q);
-  const imgs = q.images.map((im, i) =>
-    h('img.qimg', {
-      src: im.src, width: im.w, height: im.h, decoding: 'async',
-      alt: `${title}${q.images.length > 1 ? `（${i + 1}/${q.images.length}）` : ''} の問題文`,
-    }));
   const open = () => openZoom(q.images, title);
-  return h('figure.qfig',
-    h('div.qimg-wrap', { onclick: open, title: 'タップで拡大' }, imgs),
-    h('div.fig-tools',
-      h('button.zoom-btn', { type: 'button', onclick: open, 'aria-label': '問題を拡大表示' }, icon('zoom'), h('span', '拡大'))));
+  const wrap = h('figure.qfig');
+  const draw = (mode) => {
+    const tools = h('div.fig-tools');
+    let body;
+    if (mode === 'text') {
+      body = renderTextView(q, '', title);
+      tools.append(
+        h('span.fig-note', 'PDFから組み直した表示です'),
+        h('button.zoom-btn', { type: 'button', onclick: () => switchTo('image') }, icon('exam'), h('span', '原本を表示')));
+    } else {
+      const imgs = q.images.map((im, i) =>
+        h('img.qimg', {
+          src: im.src, width: im.w, height: im.h, decoding: 'async',
+          alt: `${title}${q.images.length > 1 ? `（${i + 1}/${q.images.length}）` : ''} の問題文`,
+        }));
+      body = h('div.qimg-wrap', { onclick: open, title: 'タップで拡大' }, imgs);
+      if (q.tv) tools.append(h('button.zoom-btn', { type: 'button', onclick: () => switchTo('text') }, icon('list'), h('span', '文字で表示')));
+      tools.append(h('button.zoom-btn', { type: 'button', onclick: open, 'aria-label': '問題を拡大表示' }, icon('zoom'), h('span', '拡大')));
+    }
+    wrap.replaceChildren(body, tools);
+  };
+  const switchTo = (mode) => {
+    store.setSetting('qView', mode);
+    draw(mode);
+  };
+  draw(viewModeFor(q));
+  return wrap;
 }
 
 /** 次の問題の画像を先読みする */
 export function prefetch(q) {
   if (!q) return;
-  for (const im of q.images) {
+  const mode = viewModeFor(q);
+  const srcs = mode === 'text'
+    ? q.tv.filter((b) => b.t === 'img').map((b) => b.src)
+    : q.images.map((im) => im.src);
+  for (const src of srcs) {
     const img = new Image();
     img.decoding = 'async';
-    img.src = im.src;
+    img.src = src;
   }
 }
 

@@ -31,6 +31,9 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from genres import GENRES, classify  # noqa: E402
+import textview  # noqa: E402
+
+LABEL_RE = re.compile(r"^[AB][-－−‐―ー]?\d{1,2}")
 
 ROOT = Path(__file__).resolve().parent.parent
 PDF_DIR = ROOT / "source-pdf"
@@ -308,6 +311,36 @@ def b_style(text: str) -> str:
     return "select"
 
 
+def check_text_view(item: dict, tv: list[dict], in_images: set) -> None:
+    """テキスト表示に選択肢の番号が欠けなく現れているか検査する(取りこぼしの検出)。
+
+    選択肢が式などの画像に入っている場合は文字の番号が1つも現れないので、それは許す。
+    一部だけ現れる場合は組み立てに失敗しているので Uncertain にする。
+    """
+    nums, kana, items = set(), set(), set()
+    for b in tv:
+        if b["t"] == "p" and b.get("m"):
+            m = b["m"]
+            if re.fullmatch(r"[0-9]+", m):
+                nums.add(int(m))
+            elif m in "アイウエオ":
+                kana.add(m)
+        elif b["t"] == "tbl":
+            nums.update(int(r[0]) for r in b["rows"])
+        elif b["t"] == "list":
+            items.update(int(n) for n, _ in b["items"])
+    nums |= {m for m in in_images if isinstance(m, int)} if nums else set()
+    kana |= {m for m in in_images if isinstance(m, str)} if kana else set()
+    if item["kind"] == "A":
+        if nums and nums != set(range(1, item["choices"] + 1)):
+            raise textview.Uncertain(f"選択肢番号が欠けている {sorted(nums)}")
+    else:
+        if kana and kana != set("アイウエオ"):
+            raise textview.Uncertain(f"ア〜オの一部が欠けている {sorted(kana)}")
+        if item.get("bStyle") == "select" and items and items != set(range(1, 11)):
+            raise textview.Uncertain(f"語群の番号が欠けている {sorted(items)}")
+
+
 def tf_labels(text: str) -> list[str]:
     """正誤式B問題で「1」「2」が何を表すか(ボタンの補助表示用)"""
     t = re.sub(r"\s+", "", nfkc(text))
@@ -404,6 +437,7 @@ def build(clean: bool) -> None:
             f.unlink()
 
     sessions, questions = {}, []
+    tv_skipped: list[tuple[str, str]] = []
     for code in codes:
         kp = PDF_DIR / f"{code}-kaito.pdf"
         if not kp.exists():
@@ -460,6 +494,19 @@ def build(clean: bool) -> None:
                 if style == "tf":
                     item["tfLabels"] = tf_labels(text)
             item["genre"] = classify(subject, q["kind"], q["num"], item["text"], qid)
+
+            # スマホ向けのテキスト表示(作れない問題は画像表示のみ)
+            def save_tv(img, tag, code=code, q=q):
+                name = f"{q['kind']}{q['num']:02d}_{tag}.png"
+                rel = f"data/img/{code}/{name}"
+                save_png(img, ROOT / rel)
+                return rel, img.width, img.height
+            try:
+                tv, in_images = textview.build(doc, q["parts"], LABEL_RE, save_tv)
+                check_text_view(item, tv, in_images)
+                item["tv"] = tv
+            except textview.Uncertain as e:
+                tv_skipped.append((qid, str(e)))
             questions.append(item)
 
     # 類似問題(過去の別の回に同じ/ほぼ同じ問題がある)を検出
@@ -504,7 +551,10 @@ def build(clean: bool) -> None:
     body = json.dumps(head, ensure_ascii=False, separators=(",", ":"))[:-1]
     (DATA_DIR / "questions.json").write_text(f'{body},"questions":[\n{qs_json}\n]}}\n', encoding="utf-8")
     json.loads((DATA_DIR / "questions.json").read_text(encoding="utf-8"))  # 書式の自己検証
-    print(f"→ data/questions.json: {len(sess_list)}回分 {len(questions)}問")
+    n_tv = sum(1 for q in questions if q.get("tv"))
+    print(f"→ data/questions.json: {len(sess_list)}回分 {len(questions)}問（テキスト表示あり {n_tv}問）")
+    for qid, why in tv_skipped:
+        print(f"  テキスト表示なし {qid}: {why}")
 
 
 def main() -> None:

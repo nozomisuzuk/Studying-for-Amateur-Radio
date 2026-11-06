@@ -5,6 +5,7 @@ import * as store from '../store.js';
 import { buildSessionExam, buildRandomExam, scoreExam, grade, examPoints, kindOrder } from '../engine.js';
 import { h, icon, toast, confirmDialog, fmtDuration, fmtDateTime } from '../ui.js';
 import { questionFigure, answerUI, prefetch, answerText, responseText } from '../components.js';
+import { explanationCard } from '../explain.js';
 import { startSession, rememberListPath } from './drill.js';
 import { navigate } from '../app.js';
 
@@ -290,6 +291,7 @@ export function renderExamResult(view, idxStr) {
           questionFigure(q),
           h('p.answer-compare', `あなたの解答: ${responseText(q, r.answers[q.id])}　／　正答: ${answerText(q)}`),
           q.allCorrect ? h('p.notice.info', `公式発表: ${q.allCorrect}`) : null,
+          explanationCard(q),
           h('a.btn.btn-sm', { href: `#/q/${q.id}` }, 'この問題を解き直す'),
         ].filter(Boolean));
         detail.scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -2,17 +2,23 @@
 
 import { h, openZoom } from './ui.js';
 
-const ALLOWED = new Set(['SPAN', 'SUB', 'SUP', 'I', 'B', 'IMG']);
+const INLINE = new Set(['SPAN', 'SUB', 'SUP', 'I', 'B', 'IMG', 'BR']);
+const BLOCK = new Set([...INLINE, 'P']);
+const CLASSES = { SPAN: ['bl'], B: ['fl'] }; // 残してよい class(空欄の枠・解説で正答を入れた字句)
 const IMG_SRC = /^data\/img\/[A-Za-z0-9_/.-]+\.png$/;
 
-/** 変換スクリプトが作った本文HTMLを、許可したタグ・属性だけ残して要素にする */
-function richText(html, base) {
+/**
+ * 変換スクリプトが作った HTML を、許可したタグ・属性だけ残して要素にする。
+ * block=true のときは段落(p)も許す(手書きの解説用)
+ */
+export function richText(html, base = '', { block = false } = {}) {
+  const allowed = block ? BLOCK : INLINE;
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const clean = (node) => {
     for (const child of [...node.childNodes]) {
       if (child.nodeType === Node.ELEMENT_NODE) {
-        if (!ALLOWED.has(child.tagName)) {
+        if (!allowed.has(child.tagName)) {
           child.replaceWith(document.createTextNode(child.textContent));
           continue;
         }
@@ -29,7 +35,8 @@ function richText(html, base) {
           continue;
         }
         for (const attr of [...child.attributes]) {
-          if (!(attr.name === 'class' && attr.value === 'bl')) child.removeAttribute(attr.name);
+          const keep = attr.name === 'class' && (CLASSES[child.tagName] || []).includes(attr.value);
+          if (!keep) child.removeAttribute(attr.name);
         }
         clean(child);
       } else if (child.nodeType !== Node.TEXT_NODE) {
@@ -38,9 +45,9 @@ function richText(html, base) {
     }
   };
   clean(tpl.content);
-  const span = document.createElement('span');
-  span.append(tpl.content);
-  return span;
+  const wrap = document.createElement(block ? 'div' : 'span');
+  wrap.append(tpl.content);
+  return wrap;
 }
 
 /** 1問分のテキスト表示。base は画像パスの前に付ける文字列(通常は空) */

@@ -38,8 +38,14 @@ HOMOGLYPHS = str.maketrans({"А": "A", "В": "B"})  # キリル文字で組ま�
 DIGITS = set("0123456789")
 
 
+ATTACH_LOG: list = []  # 図のラベル・説明文として図に含めた文字列(点検用)
+
+
 class Uncertain(Exception):
     """テキスト表示を作れない(作ると誤解を招くおそれがある)問題"""
+
+
+RUBY_CHAR = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 
 
 def fw2hw(s: str) -> str:
@@ -102,7 +108,9 @@ class Row:
     def finish(self):
         self.chars.sort(key=lambda c: c.x0)
         ink = [c for c in self.chars if c.c.strip()]
-        sizes = [c.size for c in ink if not c.math] or [c.size for c in ink] or [10.5]
+        # 行の文字の大きさ。添字(とても小さい文字)は数えない(添字ばかりの行を注記と間違えないため)
+        big = [c for c in ink if c.size >= 6.2] or ink
+        sizes = [c.size for c in big if not c.math] or [c.size for c in big] or [10.5]
         self.size = statistics.median(sizes)
         main = [c.base for c in ink if c.size >= self.size * 0.85 and not c.math] or [c.base for c in ink] or [0]
         self.base = statistics.median(main)
@@ -157,7 +165,11 @@ class Row:
         if not math:
             return None
         mk = row_marker(self)
-        if len(math) >= 0.5 * len(ink) or (mk and mk[0] == "num"):
+        # 番号付きの選択肢は式として行ごと画像にする。ただし文章の選択肢(式は文末などの一部だけ)は、
+        # 式の部分だけを文中に埋め込む(行ごと画像にすると小さくて読めない)
+        plain = [c for c in ink if not c.math]
+        sentence = len(plain) >= 15 and len(math) <= 0.3 * len(ink)
+        if len(math) >= 0.5 * len(ink) or (mk and mk[0] == "num" and not sentence):
             return "band"
         return "inline"
 
@@ -216,6 +228,17 @@ def _is_box_size(r: pymupdf.Rect) -> bool:
     return 10 <= r.width <= 110 and 8 <= r.height <= 24
 
 
+def _is_outline(rs: list[pymupdf.Rect], u: pymupdf.Rect) -> bool:
+    """細い線の集まりが四角形の枠(上下左右の辺)になっているか。
+    コンデンサの記号(—||—)のように、枠の大きさでも辺のない図形を枠と間違えないため"""
+    def has(pred):
+        return any(pred(r) for r in rs)
+    return (has(lambda r: r.height <= 1.6 and abs(r.y0 - u.y0) < 1.5 and r.width >= 0.8 * u.width)
+            and has(lambda r: r.height <= 1.6 and abs(r.y1 - u.y1) < 1.5 and r.width >= 0.8 * u.width)
+            and has(lambda r: r.width <= 1.6 and abs(r.x0 - u.x0) < 1.5 and r.height >= 0.8 * u.height)
+            and has(lambda r: r.width <= 1.6 and abs(r.x1 - u.x1) < 1.5 and r.height >= 0.8 * u.height))
+
+
 def _pair_edges(items: list[pymupdf.Rect]) -> tuple[list[pymupdf.Rect], set[int]]:
     """上下の横線と左右の縦線がそろった四角形(空欄の枠)を探す。
     上下に並んだ枠の辺が接していても、別々の枠として見つけられる。"""
@@ -247,16 +270,34 @@ def _pair_edges(items: list[pymupdf.Rect]) -> tuple[list[pymupdf.Rect], set[int]
     return boxes, used
 
 
-def find_boxes_and_figures(page: pymupdf.Page, clip: pymupdf.Rect):
+def _touches(a: pymupdf.Rect, b: pymupdf.Rect) -> bool:
+    """重なりの判定。Rect.intersects は幅か高さが0の矩形(水平・垂直な1本線)を常に False にするので使わない"""
+    return a.x0 <= b.x1 and a.x1 >= b.x0 and a.y0 <= b.y1 and a.y1 >= b.y0
+
+
+def find_boxes_and_figures(page: pymupdf.Page, clip: pymupdf.Rect, chars: list | None = None):
+    """空欄の枠・図・式の線を探す。chars はその範囲の文字(根号の上の横線や、文字を囲む式の線の判定に使う)"""
+    chars = chars or []
+    roots = [c for c in chars if c.c == "√"]
     items = []
     boxes = []
     for d in page.get_drawings():
-        if not d["rect"].intersects(clip):
+        if not _touches(d["rect"], clip):
             continue
         fill = d.get("fill")
-        if fill is not None and min(fill) > 0.97 and (d.get("color") is None or not d.get("width")):
+        color = d.get("color")
+        white_fill = fill is None or min(fill) > 0.97
+        if fill is not None and min(fill) > 0.97 and (color is None or not d.get("width")):
             continue  # 白塗りだけの図形(テキスト枠の背景など)は見えないので無視
+        if color is not None and min(color) > 0.97 and white_fill:
+            continue  # 白い線だけの図形(ラベルの下の線を消すための枠など)も見えない
         rects = _item_rects(d)
+        # 根号(√)の上の横線は文字(式)の一部。図として扱うと、上下に並んだ √2 の線どうしが
+        # つながって「図」になり、その下の数字を取り込んでしまう
+        rects = [r for r in rects if not (r.height <= 1.6 and any(
+            abs(r.x0 - c.x1) < 3 and c.base - c.size * 1.5 <= r.y0 <= c.base - c.size * 0.4 for c in (roots or [])))]
+        if not rects:
+            continue
         # 線で描いた四角形1つだけの図形が枠の大きさなら、それが空欄の枠
         if fill is None and d.get("color") is not None and len(d["items"]) == 1 and d["items"][0][0] == "re" \
                 and _is_box_size(rects[0]) and clip.contains(rects[0]):
@@ -275,7 +316,7 @@ def find_boxes_and_figures(page: pymupdf.Page, clip: pymupdf.Rect):
             rs = [rest[i] for i in grp]
             u = _union(rs)
             thin = all(min(r.width, r.height) <= 1.6 for r in rs)
-            if thin and len(rs) >= 2 and _is_box_size(u):
+            if thin and len(rs) >= 2 and _is_box_size(u) and _is_outline(rs, u):
                 boxes.append({"r": u, "label": ""})
             else:
                 fig_rects.extend(rs)
@@ -289,7 +330,10 @@ def find_boxes_and_figures(page: pymupdf.Page, clip: pymupdf.Rect):
     bars = [f for f in figures if f.height <= 3 and 4 <= f.width <= 150]
     figures = [f for f in figures if not ((f.height <= 3 and f.width <= 150) or (f.width <= 3 and f.height <= 20))]
     # 分数・根号などの小さな線画の断片も図ではなく「式がある印」(その行は式として画像にする)
-    small = [f for f in figures if f.width <= 40 and f.height <= 16]
+    # (幅40pt以下のもの、または文字を上下から囲む幅120pt以下のもの。後者は線で描いた根号など)
+    ink = [pymupdf.Point(c.cx, c.cy) for c in chars if c.c.strip()]
+    small = [f for f in figures if f.height <= 16 and (
+        f.width <= 40 or (f.width <= 120 and any(f.contains(p) for p in ink)))]
     bars += small
     figures = [f for f in figures if f not in small]
     return boxes, figures, bars
@@ -305,6 +349,9 @@ def page_chars(page: pymupdf.Page, clip: pymupdf.Rect) -> list[Ch]:
             continue
         for ln in b["lines"]:
             for s in ln["spans"]:
+                col = s.get("color", 0)
+                if all(((col >> k) & 0xFF) > 0xF0 for k in (0, 8, 16)):
+                    continue  # 白い文字(空欄の中に隠れた記号など)は見えないので除く
                 for c in s["chars"]:
                     x0, y0, x1, y1 = c["bbox"]
                     ch = Ch(c["c"], x0, y0, x1, y1, s["size"], s["font"], c["origin"][1])
@@ -475,6 +522,11 @@ def list_markers(row: Row) -> list[tuple[int, int, int]]:
 
 # ---------------------------------------------------------------- 組み立て
 
+def _is_note_row(row: Row) -> bool:
+    """小さい文字の行(注記)か。小さい添字が多い式の行(hFE0 ≒ hFE1 など)は注記ではない"""
+    return row.size < 8.6 and sum(c.size >= 9.5 for c in row.ink) <= 2
+
+
 def build_text_blocks(rows: list[Row], right_edge: float, label_re: re.Pattern | None):
     blocks = []
     i = 0
@@ -497,7 +549,7 @@ def build_text_blocks(rows: list[Row], right_edge: float, label_re: re.Pattern |
         chars = row.chars
         mk = row_marker(row)
         marker = None
-        is_note = row.size < 8.6
+        is_note = _is_note_row(row)
         if first:
             # 先頭行の「A－1」などの問題番号を除く
             txt = fw2hw("".join(c.c for c in row.ink[:8]))
@@ -526,11 +578,11 @@ def build_text_blocks(rows: list[Row], right_edge: float, label_re: re.Pattern |
         j = i + 1
         while j < len(rows) and not morse:
             nxt = rows[j]
-            if nxt.base - prev.base > max(prev.size, nxt.size) * 1.9:
+            if nxt.base - prev.base > max(prev.size, nxt.size, 9.5) * 1.9:
                 break
             if row_marker(nxt) or is_header_row(nxt) or len(list_markers(nxt)) >= 2 or nxt.complexity() == "morse":
                 break
-            if (nxt.size < 8.6) != is_note:
+            if _is_note_row(nxt) != is_note:
                 break
             # 前の行が(前後の行に比べて)行末まで届いていない → その行で段落が終わっている
             ref = max(nxt.x1, prev_prev_x1, prev.col_right or 0)
@@ -668,6 +720,12 @@ def parse_table(rows: list[Row], i: int, head: list[Ch]):
     nums = [int(fw2hw(t["n"])) for t in trs]
     if len(trs) < 2 or nums != list(range(1, len(trs) + 1)):
         raise Uncertain("組合せの表の行番号がそろわない")
+    # 最後の列のさらに右に、大きく離れた文字(図のラベルなど)が混ざっていないか
+    for t in trs:
+        for cl, r in zip(t["cells"], t["rows"]):
+            last = sorted(cl[-1], key=lambda c: c.x0)
+            if any(b.x0 - a.x1 > size * 4 for a, b in zip(last, last[1:])):
+                raise Uncertain("組合せの表の行に離れた文字が混ざっている")
     out_rows = []
     for t in trs:
         cells_html = []
@@ -755,7 +813,7 @@ def _segments(chars: list[Ch]) -> list[list[Ch]]:
     return segs
 
 
-def _attach_figure_text(chars: list[Ch], figures: list[pymupdf.Rect]):
+def _attach_figure_text(chars: list[Ch], figures: list[pymupdf.Rect], boxes: list[dict] | None = None):
     """図の中のラベルと、図のすぐ横(18pt以内)の短いラベルを図に含める。図に属さない文字と図の範囲を返す"""
     figs = [pymupdf.Rect(f) for f in figures]
     taken: set[int] = set()
@@ -779,10 +837,24 @@ def _attach_figure_text(chars: list[Ch], figures: list[pymupdf.Rect]):
                               max(c.x1 for c in seg), max(c.base + c.size * 0.3 for c in seg))
             row = next((r for r in rows_free if seg[0] in r.chars), None)
             size = row.size if row else 10.5
-            # 同じ行のほかの文字から十分に離れている(=本文の一部ではない)まとまりか
-            others = [c for c in (row.ink if row else []) if c not in seg]
-            isolated = all(c.x1 < sr.x0 - size * 3 or c.x0 > sr.x1 + size * 3 for c in others)
-            starts_marker = row_marker(Row(list(seg)).finish()) is not None
+            # 同じ行の「本文らしい文字列」(長い・句読点で終わる・番号付き)や空欄の枠から
+            # 十分に離れている(=文の一部ではない)まとまりか。図のラベル同士が近いのは構わない
+            others = []
+            for other in segs:
+                if other is seg or not row or other[0] not in row.chars:
+                    continue
+                ot = "".join(c.c for c in other).strip()
+                mk_o = row_marker(Row(list(other)).finish())
+                if len(other) >= 15 or ot.endswith(("。", "、", "，", "．")) or (mk_o and len(other) > len(mk_o[1]) + 1):
+                    others.append((min(c.x0 for c in other), max(c.x1 for c in other)))
+            others += [(b["r"].x0, b["r"].x1) for b in (boxes or [])
+                       if b["r"].y0 < sr.y1 and b["r"].y1 > sr.y0]
+            isolated = all(x1 < sr.x0 - size * 3 or x0 > sr.x1 + size * 3 for x0, x1 in others)
+            seg_text = "".join(c.c for c in seg).strip()
+            sentence_end = seg_text.endswith(("。", "、", "，", "．"))
+            mk = row_marker(Row(list(seg)).finish())
+            # 「1 高い」のような番号付きの文字列は選択肢。番号や記号だけ(目盛りなど)はラベル
+            starts_marker = mk is not None and len([c for c in seg if c.c.strip()]) > len(mk[1])
             # 組合せの表の列見出し(A B C)は図の説明ではない
             if row is not None and is_header_row(row):
                 continue
@@ -791,12 +863,22 @@ def _attach_figure_text(chars: list[Ch], figures: list[pymupdf.Rect]):
                 dist_x = max(sr.x0 - f.x1, f.x0 - sr.x1)  # 重なっていれば負
                 near_x = dist_x < 18
                 over_y = sr.y1 > f.y0 - 2 and sr.y0 < f.y1 + 2
-                side_label = near_x and over_y and len(seg) <= 14
+                # 1文字だけのもの(縦書きの軸名「出」「力」など)は、図に接していればラベル
+                side_label = (near_x and over_y and len(seg) <= 14 and (isolated or (len(seg) == 1 and dist_x < 12))
+                              and not starts_marker and not sentence_end)
                 # 図のすぐ上下にあって図の幅に収まる見出し・寸法・説明文(「6〔m〕」「(イメージ図)」など)
                 gap_y = max(sr.y0 - f.y1, f.y0 - sr.y1)
-                within = sr.x0 >= f.x0 - 40 and sr.x1 <= f.x1 + 40
-                caption = -2 < gap_y < size * 1.3 and within and isolated and len(seg) <= 30 and not starts_marker
-                if side_label or caption:
+                below = sr.y0 >= f.y1 - 2
+                # 図の下の説明文は図の幅の中、図の上の見出し(軸の名前など)は少し左右にはみ出してもよい
+                within = (sr.x0 >= f.x0 - 20 and sr.x1 <= f.x1 + 20) if below else \
+                    (sr.x0 >= f.x0 - 40 and sr.x1 <= f.x1 + 40)
+                caption = (-2 < gap_y < size * 1.3 and within and isolated and len(seg) <= 30
+                           and not starts_marker and not sentence_end)
+                # 図の右に並んだ記号の説明(「G：ゲート」「Vgs：入力交流電圧〔V〕」など)
+                legend = (over_y and -2 <= sr.x0 - f.x1 < 120 and len(seg) <= 20 and isolated
+                          and ("：" in seg_text or ":" in seg_text) and not starts_marker and not sentence_end)
+                if side_label or caption or legend:
+                    ATTACH_LOG.append(("side" if side_label else "caption" if caption else "legend", seg_text))
                     taken.update(id(c) for c in seg)
                     figs[fi] = f | sr
                     changed = True
@@ -820,7 +902,10 @@ def _merge_figures(figs: list[pymupdf.Rect]) -> list[pymupdf.Rect]:
                 gap_x = max(a.x0 - b.x1, b.x0 - a.x1)
                 gap_y = max(a.y0 - b.y1, b.y0 - a.y1)
                 touching = (a + (-2, -2, 2, 2)).intersects(b)
-                stacked = ov_x > 0.3 * min(a.width, b.width) and gap_y < 20
+                # 同じくらいの大きさの図が上下に並ぶのは、選択肢の図を格子状に並べたもの。
+                # 縦の列ごとにまとめると読む順(1, 2, 3, …)が乱れるので、まとめない
+                similar = min(a.get_area(), b.get_area()) > 0.5 * max(a.get_area(), b.get_area())
+                stacked = ov_x > 0.3 * min(a.width, b.width) and gap_y < 20 and not similar
                 # 主な図のすぐ横にある小さな図(凡例・記号の説明など)
                 small_side = (ov_y > 0.5 * min(a.height, b.height) and gap_x < 60
                               and min(a.get_area(), b.get_area()) < 0.25 * max(a.get_area(), b.get_area()))
@@ -847,9 +932,9 @@ def build(doc: pymupdf.Document, parts, label_re: re.Pattern, save_image) -> lis
     for pno, clip in parts:
         page = doc[pno]
         chars = page_chars(page, clip)
-        boxes, figures, bars = find_boxes_and_figures(page, clip)
-        # 根号(√)の上の横線は分数の線ではない
         roots = [c for c in chars if c.c == "√"]
+        boxes, figures, bars = find_boxes_and_figures(page, clip, chars)
+        # 根号(√)の上の横線は分数の線ではない
         bars = [b for b in bars if not any(abs(b.x0 - c.x1) < 3 and c.base - c.size * 1.5 <= b.y0 <= c.base - c.size * 0.4
                                            for c in roots)]
         # 枠の中の文字(空欄の記号 A, B, ア …)を枠に移す
@@ -861,9 +946,10 @@ def build(doc: pymupdf.Document, parts, label_re: re.Pattern, save_image) -> lis
                 rest.append(c)
             elif c.c.strip():
                 box["label"] += c.c
-        # ルビ(とても小さい文字)は除く
-        chars = [c for c in rest if c.size >= 6.2 or not c.c.strip()]
-        chars, figs = _attach_figure_text(chars, figures)
+        # ルビ(とても小さいかな・漢字)は除く。小さい英数字は添字なので残す
+        chars = [c for c in rest if c.size >= 6.2 or not c.c.strip() or not RUBY_CHAR.match(c.c)]
+        outside_boxes = [b for b in boxes if not any((f + (-2, -2, 2, 2)).contains(b["r"]) for f in figures)]
+        chars, figs = _attach_figure_text(chars, figures, outside_boxes)
         # 図の中にある枠(図中の記号)は図の一部として画像に残す
         boxes = [b for b in boxes if not any((f + (-2, -2, 2, 2)).contains(b["r"]) for f in figs)]
 
@@ -952,26 +1038,46 @@ def build(doc: pymupdf.Document, parts, label_re: re.Pattern, save_image) -> lis
                         break
         regions = [pymupdf.Rect(f) for f in figs] + [b[0] for b in bands]
         if regions:
-            regions = [_union([regions[i] for i in grp]) for grp in _cluster(regions, 1)]
+            groups = _cluster(regions, 1)
+            # 選択肢の式の帯が図とくっついて1枚になると、図も選択肢も小さく読みにくい(原本の方がよい)
+            for grp in groups:
+                has_fig = any(i < len(figs) for i in grp)
+                choice_band = any(i >= len(figs) and any(_marker_key(r) for r in bands[i - len(figs)][1]) for i in grp)
+                if has_fig and choice_band:
+                    raise Uncertain("選択肢の式が図と重なっている")
+            regions = [_union([regions[i] for i in grp]) for grp in groups]
         text_rows = []
+        fig_regions = [reg for reg in regions if any(reg.intersects(f) for f in figs)]
+        swallowed = 0  # 図の画像に入ってしまった文章の行の数
+
+        def sentence_like(r):
+            return len(r.ink) >= 15 and sum(c.math for c in r.ink) < 0.3 * len(r.ink)
         for r in rows:
             if id(r) in in_band:
                 image_markers.update(_marker_key(r))
+                if sentence_like(r) and any(reg.contains(r.rect()) for reg in fig_regions):
+                    swallowed += 1
                 continue
             # 行のすべての文字・枠が図の範囲に入っているときだけ図の一部とみなす(文字の取りこぼし防止)
             pts = [pymupdf.Point(c.cx, c.cy) for c in r.ink] + \
                   [pymupdf.Point((b["r"].x0 + b["r"].x1) / 2, (b["r"].y0 + b["r"].y1) / 2) for b in r.boxes]
             if pts and any(all((reg + (-2, -2, 2, 2)).contains(p) for p in pts) for reg in regions):
                 image_markers.update(_marker_key(r))
+                if sentence_like(r) and any(all((reg + (-2, -2, 2, 2)).contains(p) for p in pts) for reg in fig_regions):
+                    swallowed += 1
                 continue
             text_rows.append(r)
+        # 本文の文章がまとめて図の画像に入ってしまう配置(図と本文が入り組んだもの)は原本で見る方がよい
+        if swallowed >= 3:
+            raise Uncertain("本文の文章が図の画像に入ってしまう")
 
         right_edge = max((r.x1 for r in text_rows), default=clip.x1)
         text_rows = split_columns(text_rows)
         blocks = build_text_blocks(text_rows, right_edge, label_re if first_part else None)
         first_part = False
-        # 文章のブロックは読み順のまま、図や式の画像はその上端の位置に差し込む
-        for reg in sorted(regions, key=lambda r: r.y0):
+        # 文章のブロックは読み順のまま、図や式の画像はその上端の位置に差し込む。
+        # 横に並んだ図(同じ段)は左から順に置く
+        for reg, row_top in _reading_order(regions, figs):
             area = pymupdf.Rect(reg.x0 - 3, reg.y0 - 3, reg.x1 + 3, reg.y1 + 3) & page.rect
             # 図の範囲に少しかかっている本文の文字は、図の画像に写り込まないよう消す
             mask = [pymupdf.Rect(c.x0, c.base - c.size * 0.95, c.x1, c.base + c.size * 0.3)
@@ -985,12 +1091,34 @@ def build(doc: pymupdf.Document, parts, label_re: re.Pattern, save_image) -> lis
             src, w, h = save_image(img, f"t{n_fig}")
             blk = {"t": "img", "src": src, "w": w, "h": h, "pw": round(reg.width + 6, 1)}
             # 図と同じ高さから始まる文章(図の左に並んだ選択肢など)より前に図を置く
-            idx = next((k for k, (top, b) in enumerate(blocks) if b["t"] != "img" and top > reg.y0 - 14), len(blocks))
+            idx = next((k for k, (top, b) in enumerate(blocks) if b["t"] != "img" and top > row_top - 14), len(blocks))
             blocks.insert(idx, (reg.y0, blk))
         out.extend(b for _, b in blocks)
     if not any(b["t"] != "img" for b in out):
         raise Uncertain("テキストにできる部分がない")
     return out, image_markers
+
+
+def _reading_order(regions: list[pymupdf.Rect], figs: list[pymupdf.Rect]) -> list[tuple[pymupdf.Rect, float]]:
+    """図の並べ順。上下の範囲が半分以上重なる図は同じ段とみなす。
+    段の中では、図(線画)を左から順に先に置き、式の帯(選択肢の式など)はその後に上から順に置く"""
+    rows: list[list[pymupdf.Rect]] = []
+    for reg in sorted(regions, key=lambda r: r.y0):
+        row = rows[-1] if rows else None
+        if row and any(min(reg.y1, o.y1) - max(reg.y0, o.y0) > 0.5 * min(reg.height, o.height) for o in row):
+            row.append(reg)
+        else:
+            rows.append([reg])
+    out = []
+    for row in rows:
+        top = min(r.y0 for r in row)
+        # 小さなもの(絶対値の縦線だけの式など)は図として扱わず、本文の中の位置に置く
+        pics = sorted((r for r in row if any(r.intersects(f) for f in figs) and max(r.width, r.height) >= 60),
+                      key=lambda r: r.x0)
+        rest = sorted((r for r in row if r not in pics), key=lambda r: (r.y0, r.x0))
+        # 同じ段の図は同じ位置(段の上端)に、式の帯は本文の中のそれぞれの位置に差し込む
+        out.extend([(r, top) for r in pics] + [(r, r.y0) for r in rest])
+    return out
 
 
 def _marker_key(r: Row) -> set:

@@ -32,12 +32,14 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from genres import GENRES, classify  # noqa: E402
 import textview  # noqa: E402
+import explain  # noqa: E402
 
 LABEL_RE = re.compile(r"^[AB][-－−‐―ー]?\d{1,2}")
 
 ROOT = Path(__file__).resolve().parent.parent
 PDF_DIR = ROOT / "source-pdf"
 DATA_DIR = ROOT / "data"
+EXPL_DIR = ROOT / "explanations"
 IMG_DIR = DATA_DIR / "img"
 
 OFFICIAL_PAGE = "https://www.nichimu.or.jp/kshiken/siken/index.html"
@@ -550,24 +552,48 @@ def build(clean: bool) -> None:
         "sessions": [{k: s[k] for k in ("id", "label", "year", "month", "codes")} for s in sess_list],
         "questions": questions,
     }
-    DATA_DIR.mkdir(exist_ok=True)
-    # 1問1行で書き出す(容量を抑えつつ git の差分を読みやすくする)
-    qs_json = ",\n".join(json.dumps(q, ensure_ascii=False, separators=(",", ":")) for q in questions)
-    head = {k: v for k, v in out.items() if k != "questions"}
-    body = json.dumps(head, ensure_ascii=False, separators=(",", ":"))[:-1]
-    (DATA_DIR / "questions.json").write_text(f'{body},"questions":[\n{qs_json}\n]}}\n', encoding="utf-8")
-    json.loads((DATA_DIR / "questions.json").read_text(encoding="utf-8"))  # 書式の自己検証
+    print_explain_stats(explain.attach(questions, EXPL_DIR))
+    write_json(out)
     n_tv = sum(1 for q in questions if q.get("tv"))
     print(f"→ data/questions.json: {len(sess_list)}回分 {len(questions)}問（テキスト表示あり {n_tv}問）")
     for qid, why in tv_skipped:
         print(f"  テキスト表示なし {qid}: {why}")
 
 
+def write_json(out: dict) -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+    questions = out["questions"]
+    # 1問1行で書き出す(容量を抑えつつ git の差分を読みやすくする)
+    qs_json = ",\n".join(json.dumps(q, ensure_ascii=False, separators=(",", ":")) for q in questions)
+    head = {k: v for k, v in out.items() if k != "questions"}
+    body = json.dumps(head, ensure_ascii=False, separators=(",", ":"))[:-1]
+    (DATA_DIR / "questions.json").write_text(f'{body},"questions":[\n{qs_json}\n]}}\n', encoding="utf-8")
+    json.loads((DATA_DIR / "questions.json").read_text(encoding="utf-8"))  # 書式の自己検証
+
+
+def print_explain_stats(st: dict) -> None:
+    print(f"解説: 正しい文(自動) {st['fill']}問 / 符号の読み(自動) {st['morse']}問 / "
+          f"手書き {st['exp']}問 / 解説なし {st['none']}問")
+    for k in st["unknown_ids"]:
+        print(f"  注意: explanations にある {k} に対応する問題がありません")
+
+
+def refresh_explanations() -> None:
+    """画像は作り直さず、解説だけを data/questions.json に入れ直す"""
+    out = json.loads((DATA_DIR / "questions.json").read_text(encoding="utf-8"))
+    print_explain_stats(explain.attach(out["questions"], EXPL_DIR))
+    write_json(out)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--download", action="store_true", help="公式サイトから最新のPDFを取得する")
     ap.add_argument("--no-clean", action="store_true", help="既存の画像を削除せずに上書きする")
+    ap.add_argument("--explain-only", action="store_true", help="解説(explanations/)だけを取り込み直す")
     args = ap.parse_args()
+    if args.explain_only:
+        refresh_explanations()
+        return
     if args.download:
         print("公式サイトからPDFを取得します…")
         download_official()

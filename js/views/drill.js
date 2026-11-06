@@ -5,6 +5,7 @@ import * as store from '../store.js';
 import { grade, remainingToClear } from '../engine.js';
 import { h, icon, toast, confirmDialog, promptText, historyDots, fmtDuration, fmtDate } from '../ui.js';
 import { questionFigure, answerUI, prefetch, answerText, responseText } from '../components.js';
+import { explanationCard } from '../explain.js';
 import { navigate } from '../app.js';
 
 let session = null;
@@ -85,7 +86,7 @@ export function renderDrill(view) {
 
   const answer = answerUI(q, {
     mode: 'drill',
-    onAnswer: (response) => submit(q, item, response, answer, dock, feedback),
+    onAnswer: (response) => submit(q, item, response, answer, dock, feedback, body),
   });
 
   const body = h('div.drill-body', meta, fig, notes);
@@ -122,7 +123,7 @@ export function renderDrill(view) {
   return () => document.removeEventListener('keydown', onKey);
 }
 
-function submit(q, item, response, answer, dock, feedback) {
+function submit(q, item, response, answer, dock, feedback, body) {
   if (session.answered) return;
   const result = grade(q, response);
   const { prev, next: stat } = store.record(q, result, session.mode, response);
@@ -181,6 +182,15 @@ function submit(q, item, response, answer, dock, feedback) {
     type: 'button', 'aria-label': '解答を取り消す', title: '押し間違えたときに取り消す',
     onclick: () => undoCurrent(q, retryAdded),
   }, icon('undo'));
+  // 解説は問題文の下に出し、解答欄からはボタンで移動できるようにする
+  const expl = explanationCard(q);
+  if (expl) body.append(expl);
+  const explBtn = expl
+    ? h('button.btn.btn-sm.expl-btn', {
+      type: 'button', title: '解説へ移動',
+      onclick: () => expl.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    }, icon('info'), '解説')
+    : null;
   const nextLabel = session.mode === 'single' ? '戻る' : session.idx + 1 >= session.queue.length ? '結果を見る' : '次へ';
   const nextBtn = h('button.btn.btn-primary.next-btn', { type: 'button', onclick: next }, nextLabel, icon('next'));
 
@@ -191,7 +201,7 @@ function submit(q, item, response, answer, dock, feedback) {
       head),
     note ? h('p.fb-note', note) : null,
     stat.memo ? h('p.fb-memo', icon('memo'), stat.memo) : null,
-    h('div.fb-actions', undoBtn, bm, memoBtn, nextBtn)));
+    h('div.fb-actions', undoBtn, bm, memoBtn, explBtn, nextBtn)));
   dock.classList.add('answered');
   if (q.kind === 'B') feedback.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   setTimeout(() => nextBtn.focus({ preventScroll: true }), 50);

@@ -34,6 +34,7 @@ CIRCLED = {chr(c) for c in range(0x2460, 0x2474)}
 KANA = "アイウエオカキクケコ"
 HEAD_LETTERS = {"A", "B", "C", "D", "E"}
 MORSE = set("－・")
+HOMOGLYPHS = str.maketrans({"А": "A", "В": "B"})  # キリル文字で組まれた問題番号への対策
 DIGITS = set("0123456789")
 
 
@@ -500,7 +501,7 @@ def build_text_blocks(rows: list[Row], right_edge: float, label_re: re.Pattern |
         if first:
             # 先頭行の「A－1」などの問題番号を除く
             txt = fw2hw("".join(c.c for c in row.ink[:8]))
-            m = label_re.match(txt)
+            m = label_re.match(txt.translate(HOMOGLYPHS))
             if m:
                 cut = row.ink[len(m.group(0)) - 1].x1
                 chars = [c for c in row.chars if c.x0 >= cut - 0.1]

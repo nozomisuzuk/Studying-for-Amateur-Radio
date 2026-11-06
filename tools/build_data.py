@@ -64,8 +64,12 @@ FOOTER_RE = re.compile(r"^\s*\(\s*H[ZY]\s*\d+\s*[-−‐―ー]\s*\d+\s*\)\s*$")
 CODE_RE = re.compile(r"H\s*([ZY])\s*(\d)\s*(\d)\s*(\d)")
 
 
+# PDFの中に、見た目は同じでも別の文字(キリル文字の А・В など)で組まれた問題番号がある
+HOMOGLYPHS = str.maketrans({"А": "A", "В": "B", "а": "a"})
+
+
 def nfkc(s: str) -> str:
-    return unicodedata.normalize("NFKC", s)
+    return unicodedata.normalize("NFKC", s).translate(HOMOGLYPHS)
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +276,8 @@ GOTHIC_HINTS = ("\x83S\x83V\x83b\x83N", "Gothic", "ゴシック")
 CHOICE_OVERRIDES = {
     "HZ808-A09": 4,  # 選択肢番号が図のラベルになっている
     "HZ705-A23": 5,  # 同上
+    "HZ209-A08": 4,  # 選択肢が真理値表(図)
+    "HZ404-A10": 4,  # 同上
 }
 
 

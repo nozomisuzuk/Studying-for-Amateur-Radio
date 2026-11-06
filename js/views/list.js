@@ -1,6 +1,6 @@
 // 問題一覧(絞り込み・検索)
 
-import { db, subjectLabel, genreLabel, sessionLabel } from '../data.js';
+import { db, subjectLabel, genreLabel, sessionLabel, isOutdated } from '../data.js';
 import * as store from '../store.js';
 import { kindOrder } from '../engine.js';
 import { h, icon, historyDots } from '../ui.js';
@@ -93,7 +93,8 @@ export function renderList(view) {
         status,
         h('span.q-main',
           h('span.q-title', `${sessionLabel(q.session)} ${subjectLabel(q.subject)} ${q.label}`),
-          h('span.q-sub', genreLabel(q.genre), s?.memo ? h('span.memo-mark', icon('memo')) : null, s?.bm ? h('span.star-mark', icon('star')) : null)),
+          h('span.q-sub', genreLabel(q.genre), isOutdated(q) ? h('span.badge.old', '法改正') : null,
+            s?.memo ? h('span.memo-mark', icon('memo')) : null, s?.bm ? h('span.star-mark', icon('star')) : null)),
         s?.a ? historyDots(s.h, 5) : null,
         h('span.q-rate.muted', s?.a ? `${s.c}/${s.a}` : ''))));
     }

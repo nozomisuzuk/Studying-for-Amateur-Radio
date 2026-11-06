@@ -1,11 +1,11 @@
 // 演習画面(1問ずつ解いて即採点)と結果画面
 
-import { q as getQ, questionTitle, genreLabel } from '../data.js';
+import { q as getQ, questionTitle, genreLabel, isOutdated } from '../data.js';
 import * as store from '../store.js';
 import { grade, remainingToClear } from '../engine.js';
 import { h, icon, toast, confirmDialog, promptText, historyDots, fmtDuration, fmtDate } from '../ui.js';
 import { questionFigure, answerUI, prefetch, answerText, responseText } from '../components.js';
-import { explanationCard } from '../explain.js';
+import { explanationCard, outdatedNotice } from '../explain.js';
 import { navigate } from '../app.js';
 
 let session = null;
@@ -80,6 +80,7 @@ export function renderDrill(view) {
   const fig = questionFigure(q);
   const notes = h('div.qnotes');
   if (q.allCorrect) notes.append(h('p.notice.info', icon('info'), `公式発表: ${q.allCorrect}（本アプリでは公表された正答を正解として扱います）`));
+  if (isOutdated(q)) notes.append(outdatedNotice());
 
   const dock = h('div.dock');
   const feedback = h('div.feedback-slot', { 'aria-live': 'polite' });

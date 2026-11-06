@@ -1,6 +1,6 @@
 // Service Worker: アプリ本体は「ネット優先・失敗したら保存分」、問題画像は「保存分優先・裏で更新」
 
-const VERSION = '2026-11-06.3';
+const VERSION = '2026-11-06.4';
 const SHELL_CACHE = `ama1-shell-${VERSION}`;
 const IMG_CACHE = 'ama1-img-v1';
 

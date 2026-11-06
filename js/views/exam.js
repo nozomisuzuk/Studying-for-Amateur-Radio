@@ -1,11 +1,11 @@
 // 模擬試験(本番と同じ30問・2時間30分・150点満点/合格105点)
 
-import { db, q as getQ, subjectLabel, genreLabel, examCodes, sessionLabel } from '../data.js';
+import { db, q as getQ, subjectLabel, genreLabel, examCodes, sessionLabel, practice, isOutdated } from '../data.js';
 import * as store from '../store.js';
 import { buildSessionExam, buildRandomExam, scoreExam, grade, examPoints, kindOrder } from '../engine.js';
 import { h, icon, toast, confirmDialog, fmtDuration, fmtDateTime } from '../ui.js';
 import { questionFigure, answerUI, prefetch, answerText, responseText } from '../components.js';
-import { explanationCard } from '../explain.js';
+import { explanationCard, outdatedNotice } from '../explain.js';
 import { startSession, rememberListPath } from './drill.js';
 import { navigate } from '../app.js';
 
@@ -33,7 +33,7 @@ function startSessionExam(code, subject) {
 }
 
 function startRandomExam(subject) {
-  const qs = buildRandomExam(db().questions, subject);
+  const qs = buildRandomExam(practice(), subject);
   beginExam({
     kind: 'random', code: null, subject, title: `ランダム模試 ${subjectLabel(subject)}`,
     ids: qs.map((q) => q.id), answers: {}, flags: [], idx: 0,
@@ -156,6 +156,7 @@ export function renderExamRun(view) {
     stage.replaceChildren(
       h('div.qmeta', h('span.qtitle', `${q.label}`), h('span.muted.small', ` ${draft.kind === 'random' ? sessionLabel(q.session) : ''}`)),
       questionFigure(q),
+      ...(isOutdated(q) ? [outdatedNotice()] : []),
       q.kind === 'B'
         ? h('p.b-hint', q.bStyle === 'tf' ? `ア〜オ それぞれ 1（${q.tfLabels?.[0] ?? '正'}）か 2（${q.tfLabels?.[1] ?? '誤'}）` : 'ア〜オ に入る字句の番号（1〜10）')
         : h('p.b-hint', `1〜${q.choices} から1つ選択（もう一度押すと取り消し）`),

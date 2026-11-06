@@ -1,5 +1,7 @@
 // 問題データ(data/questions.json)の読み込みと索引
 
+import * as store from './store.js';
+
 let DB = null;
 
 export async function loadData() {
@@ -22,9 +24,22 @@ export const subjectLabel = (s) => DB.subjects[s]?.label ?? s;
 export const genreLabel = (id) => DB.genreById.get(id)?.label ?? '未分類';
 export const sessionLabel = (id) => DB.sessionById.get(id)?.label ?? id;
 
+/** 法改正で正答や記述が現在の規定と食い違う問題か(用語の変更だけのものは含まない) */
+export const isOutdated = (x) => x?.outdated?.level === 'major';
+
+/**
+ * 演習に使う問題。法改正で内容が現在の規定と食い違う問題は、
+ * 設定で含めない限り除く(問題一覧と過去問の模擬試験には残す)
+ */
+export function practice(list = DB.questions) {
+  if (store.settings().includeOutdated) return list;
+  return list.filter((x) => !isOutdated(x));
+}
+
 export function questionsOf(subject) {
-  if (!subject || subject === 'both') return DB.questions;
-  return DB.questions.filter((q) => q.subject === subject);
+  const all = practice();
+  if (!subject || subject === 'both') return all;
+  return all.filter((q) => q.subject === subject);
 }
 
 /** 「令和7年11月期 無線工学 A-5」のような表示名 */

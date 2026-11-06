@@ -3,6 +3,8 @@
 1. 自動「正しい文」(fill) … 空欄補充の問題で、正答の字句を空欄に入れた文を作る
 2. 自動「符号の読み」(morse) … モールス符号の問題で、各符号を文字に読み下す
 3. 手書きの解説(exp) … explanations/<試験コード>.md に書いた解説を取り込む
+4. 法改正の注記(outdated) … explanations/outdated.md に書いた、出題後の法改正で
+   現在の規定と食い違う問題の一覧と説明を取り込む
 
 手書きの解説ファイルの書式:
     ## A-1
@@ -10,6 +12,12 @@
 
     ## A-2 = HZ612-A03
     (「=」の後に問題IDを書くと、その問題の解説を共有する)
+
+法改正の注記ファイル(explanations/outdated.md)の書式:
+    ## HY209-A04 | 令和7年法律第27号（令和8年4月1日施行） | major
+    何がどう変わったかの説明
+  major … 正答や記述の内容が現在の規定と食い違う(演習から既定で外す)
+  minor … 用語・条番号などが変わったが、答えは変わらない(解説に注記するだけ)
 """
 from __future__ import annotations
 
@@ -195,6 +203,32 @@ def load_manual(directory: Path) -> tuple[dict[str, str], dict[str, str]]:
     return exps, refs
 
 
+OLD_HEAD = re.compile(r"^##\s*(H[ZY]\d{3}-[AB]\d{2})\s*\|\s*(.+?)\s*(?:\|\s*(major|minor)\s*)?$")
+
+
+def load_outdated(directory: Path) -> dict[str, dict]:
+    """explanations/outdated.md を読み、{問題ID: {"law": 改正, "note": HTML}} を返す"""
+    f = directory / "outdated.md"
+    if not f.exists():
+        return {}
+    res, cur, law, level, buf = {}, None, "", "major", []
+
+    def flush():
+        if cur:
+            res[cur] = {"law": law, "level": level, "note": md_to_html("\n".join(buf))}
+    for line in f.read_text(encoding="utf-8").splitlines():
+        m = OLD_HEAD.match(line)
+        if m:
+            flush()
+            cur, law, level, buf = m.group(1), m.group(2), m.group(3) or "major", []
+        elif line.startswith("# "):
+            continue
+        else:
+            buf.append(line)
+    flush()
+    return res
+
+
 def dup_key(q: dict) -> str:
     """まったく同じ問題(本文と正答が同一)を見分けるキー"""
     t = re.sub(r"\s+", "", q["text"])
@@ -206,8 +240,9 @@ def dup_key(q: dict) -> str:
 def attach(questions: list[dict], directory: Path) -> dict:
     """各問題に fill / morse / exp を付ける。集計を返す"""
     exps, refs = load_manual(directory)
+    old = load_outdated(directory)
     by_id = {q["id"]: q for q in questions}
-    unknown = [k for k in list(exps) + list(refs) if k not in by_id]
+    unknown = [k for k in list(exps) + list(refs) + list(old) if k not in by_id]
     for k, v in refs.items():
         if v in exps and k not in exps:
             exps[k] = exps[v]
@@ -220,10 +255,13 @@ def attach(questions: list[dict], directory: Path) -> dict:
         if src:
             for i in ids:
                 exps.setdefault(i, exps[src])
-    stats = {"fill": 0, "morse": 0, "exp": 0, "none": 0}
+    stats = {"fill": 0, "morse": 0, "exp": 0, "none": 0, "outdated": 0, "amended": 0}
     for q in questions:
-        for k in ("fill", "morse", "exp"):
+        for k in ("fill", "morse", "exp", "outdated"):
             q.pop(k, None)
+        if q["id"] in old:
+            q["outdated"] = old[q["id"]]
+            stats["outdated" if q["outdated"]["level"] == "major" else "amended"] += 1
         f = fill_sentences(q)
         m = morse_notes(q)
         if f:

@@ -340,7 +340,13 @@ button.genre-row:hover { background: var(--surface-2); }
 .expl img.im { height: 1.42em; width: auto; vertical-align: -0.4em; margin: 0 0.05em; }
 .expl sub, .expl sup { font-size: 0.72em; line-height: 0; }
 .expl-btn { margin-left: auto; white-space: nowrap; flex: none; }
-.expl-btn + .next-btn { margin-left: 6px; }
+.expl-old { margin: 0 0 8px; padding: 6px 10px 2px; border-radius: 8px; background: var(--warn-soft); }
+.expl-old .expl-sub { margin-top: 2px; color: var(--warn); }
+.expl-old.minor { background: var(--surface-2); }
+.expl-old.minor .expl-sub { color: var(--muted); }
+.notice.warn .icon { color: var(--warn); }
+.badge.old { background: var(--warn-soft); color: var(--warn); margin-left: 6px; }
+.expl-btn + .next-btn { margin-left: 6px; min-width: 96px; }
 
 .b-hint { font-size: 0.85rem; color: var(--muted); margin: 12px 0 6px; }
 .answer-b { display: grid; gap: 6px; }

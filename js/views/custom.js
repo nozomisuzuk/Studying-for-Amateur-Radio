@@ -1,6 +1,6 @@
 // 条件を指定して演習
 
-import { db, subjectLabel } from '../data.js';
+import { db, subjectLabel, practice } from '../data.js';
 import * as store from '../store.js';
 import { pickCustom, genreSummary } from '../engine.js';
 import { h, icon } from '../ui.js';
@@ -33,7 +33,7 @@ function filtered() {
   const D = db();
   const sess = form.sessions;
   const gen = form.genres;
-  return D.questions.filter((q) => form.subjects.has(q.subject) && form.kinds.has(q.kind)
+  return practice(D.questions).filter((q) => form.subjects.has(q.subject) && form.kinds.has(q.kind)
     && (!sess || sess.has(q.session)) && (!gen || gen.has(q.genre)));
 }
 
@@ -103,7 +103,7 @@ export function renderCustom(view) {
       ids: list.map((q) => q.id),
       refill: () => {
         const D2 = db();
-        const base = D2.questions.filter((q) => snapshot.subjects.has(q.subject) && snapshot.kinds.has(q.kind)
+        const base = practice(D2.questions).filter((q) => snapshot.subjects.has(q.subject) && snapshot.kinds.has(q.kind)
           && snapshot.sessions.has(q.session) && snapshot.genres.has(q.genre));
         return pickCustom(base, store.stats(), { status: snapshot.status, order: snapshot.order, count: snapshot.count }).map((q) => q.id);
       },

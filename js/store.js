@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   subject: 'both',        // おまかせ演習の科目: both | kogaku | hoki
   showTimer: true,
   qView: 'auto',          // 問題文: auto(狭い画面は文字・広い画面は原本) | text | image
+  includeOutdated: false, // 法改正で内容が古くなった問題も演習・ランダム模試に出す
 };
 
 function blank() {

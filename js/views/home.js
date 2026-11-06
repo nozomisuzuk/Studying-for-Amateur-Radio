@@ -1,4 +1,4 @@
-import { db, questionsOf, subjectLabel } from '../data.js';
+import { db, questionsOf, subjectLabel, practice } from '../data.js';
 import * as store from '../store.js';
 import { genreSummary, pickSmart, pickReview, isDue, dayKey, DAY, weakness } from '../engine.js';
 import { h, icon, pct, fmtDate } from '../ui.js';
@@ -20,12 +20,12 @@ export function smartSession(subject) {
 }
 
 export function reviewSession(includeAll = false) {
-  const ids = pickReview(db().questions, store.stats(), { includeAll }).map((q) => q.id);
+  const ids = pickReview(practice(), store.stats(), { includeAll }).map((q) => q.id);
   startSession({
     mode: 'review',
     title: includeAll ? '要復習の問題（すべて）' : '今日の復習',
     ids,
-    refill: () => pickReview(db().questions, store.stats(), { includeAll }).map((q) => q.id),
+    refill: () => pickReview(practice(), store.stats(), { includeAll }).map((q) => q.id),
   });
 }
 
@@ -33,7 +33,7 @@ export function reviewSession(includeAll = false) {
 export function genreSession(genreIds, title) {
   const set = new Set(genreIds);
   const pick = () => {
-    const qs = db().questions.filter((q) => set.has(q.genre));
+    const qs = practice().filter((q) => set.has(q.genre));
     const st = store.stats();
     const gi = genreSummary(qs, st, [...set].map((id) => db().genreById.get(id)));
     return pickSmart(qs, st, gi, { count: store.settings().sessionSize }).map((q) => q.id);
@@ -92,7 +92,7 @@ export function renderHome(view) {
   const st = store.stats();
   const s = store.settings();
   const now = Date.now();
-  const all = D.questions;
+  const all = practice();
   const attempted = all.filter((q) => st[q.id]?.a > 0);
   const lastOk = attempted.filter((q) => st[q.id].lr === 1).length;
   const reviewAll = all.filter((q) => st[q.id]?.rv);
@@ -104,7 +104,7 @@ export function renderHome(view) {
   const header = h('header.page-head',
     h('div',
       h('h1.app-title', '1アマ過去問ドリル'),
-      h('p.sub', `第一級アマチュア無線技士 / ${D.sessions.length}回分 ${all.length}問`)));
+      h('p.sub', `第一級アマチュア無線技士 / ${D.sessions.length}回分 ${D.questions.length}問`)));
   if (s.examDate) {
     const days = Math.ceil((new Date(s.examDate + 'T00:00:00').getTime() - new Date(dayKey(now) + 'T00:00:00').getTime()) / DAY);
     if (days >= 0) header.append(h('div.countdown', h('span', '試験まで'), h('strong', String(days)), h('span', '日')));

@@ -574,6 +574,7 @@ def write_json(out: dict) -> None:
 def print_explain_stats(st: dict) -> None:
     print(f"解説: 正しい文(自動) {st['fill']}問 / 符号の読み(自動) {st['morse']}問 / "
           f"手書き {st['exp']}問 / 解説なし {st['none']}問")
+    print(f"法改正で現在の規定と食い違う問題: {st['outdated']}問 / 用語などが改正された問題(答えは同じ): {st['amended']}問")
     for k in st["unknown_ids"]:
         print(f"  注意: explanations にある {k} に対応する問題がありません")
 

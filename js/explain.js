@@ -5,15 +5,30 @@
 
 import { h, icon } from './ui.js';
 import { richText } from './textview.js';
+import { isOutdated } from './data.js';
 
 export function hasExplanation(q) {
-  return !!(q && (q.exp || q.fill?.length || q.morse?.length));
+  return !!(q && (q.exp || q.fill?.length || q.morse?.length || q.outdated));
+}
+
+/** 解答前に出す注意書き(答えが分からないよう、何が変わったかは解説で示す) */
+export function outdatedNotice() {
+  return h('p.notice.warn', icon('info'),
+    '出題後の法改正で、この問題の内容は現在の規定と食い違います。公式の正答で採点し、解答後の解説で現在の規定を示します。');
 }
 
 /** 解説のカード。解説がない問題では null */
 export function explanationCard(q) {
   if (!hasExplanation(q)) return null;
   const sec = h('section.expl', { 'aria-label': '解説' }, h('h3.expl-title', icon('info'), '解説'));
+  if (q.outdated) {
+    const note = richText(q.outdated.note || '', '', { block: true });
+    note.className = 'expl-old-body';
+    const major = isOutdated(q);
+    sec.append(h('div.expl-old' + (major ? '' : '.minor'),
+      h('h4.expl-sub', `${major ? '法改正で現在の規定と異なります' : 'その後の法改正'}（${q.outdated.law}）`),
+      note));
+  }
   if (q.exp) {
     const body = richText(q.exp, '', { block: true });
     body.className = 'expl-body';
